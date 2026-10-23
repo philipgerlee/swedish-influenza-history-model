@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "swedish-influenza-history-model"
+version = "1.0.0"
+description = "Adaptive historical-season forecasts for the Swedish Influenza Forecast Hub"
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26,<3", "scipy>=1.11,<2"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

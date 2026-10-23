@@ -1,0 +1,148 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[margin=2.0cm]{geometry}
+\usepackage{microtype}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+\newcommand{\modelname}{\texttt{gerlee-history}}
+
+\begin{document}
+
+\begin{center}
+  {\Large\bfseries Technical description of an adaptive historical-season regression model}\par
+  \vspace{0.3em}
+  {\modelname{} for the Swedish Influenza Forecast Hub}\par
+  \vspace{0.2em}
+  Philip Gerlee, Chalmers University of Technology
+\end{center}
+
+\section*{Purpose and data source}
+
+The model produces point forecasts of weekly reported influenza cases for
+Sweden (SE), Region Skåne (SE-M), and Region Västra Götaland (SE-O). Forecasts
+are submitted for horizons $h=0,1,2,3$, where $h=0$ denotes the week ending on
+the forecast reference date. The model uses only the time series published by
+the forecast hub; no external epidemiological or demographic covariates are
+included.
+
+The central assumption is that influenza exhibits recurring seasonal shapes.
+The number of cases in a given ISO week of the current season can therefore be
+approximated by a linear combination of the counts in the corresponding week
+of previous seasons. This combination is updated sequentially as new
+observations become available during the current season.
+
+An influenza season is defined as ISO week 30 in year $a$ through week 23 in
+year $a+1$. Only historical seasons with complete observations for all three
+locations are used. The 2020/21 season is excluded because the pandemic and
+associated control measures produced highly atypical influenza circulation.
+For the retrospective forecasts of 2025/26, eight seasons are used:
+2016/17--2019/20 and 2021/22--2024/25.
+
+\section*{Model formulation}
+
+Consider one location at a time. Let $y_t$ denote the observed count in week
+$t$ of the current season, and let
+\[
+  \mathbf{x}_t=(x_{t1},\ldots,x_{tn})^{\mathsf T}
+\]
+contain the counts in the corresponding ISO week of the $n$ historical
+seasons. The model expectation is
+\begin{equation}
+  \widehat y_t = \mathbf{x}_t^{\mathsf T}\boldsymbol\beta,
+  \qquad \boldsymbol\beta=(\beta_1,\ldots,\beta_n)^{\mathsf T},
+  \qquad \beta_j\geq 0.
+  \label{eq:forecast}
+\end{equation}
+At the beginning of the season, all historical seasons receive equal weight,
+\begin{equation}
+  \boldsymbol\beta_0=\frac{1}{n}\mathbf{1}.
+  \label{eq:prior}
+\end{equation}
+The model starts updating the weights with observations from week 30. For a
+forecast reference date $r$, let $\mathcal T_r$ contain all observed weeks from
+week 30 through the Sunday preceding $r$. Let the rows of $\mathbf X_r$ be
+$\mathbf{x}_t^{\mathsf T}$ and let $\mathbf y_r$ contain the corresponding
+observations. The coefficients are estimated as
+\begin{equation}
+  \widehat{\boldsymbol\beta}_r=
+  \underset{\boldsymbol\beta\geq0}{\operatorname{argmin}}
+  \left\{
+  \frac{\lVert\mathbf y_r-\mathbf X_r\boldsymbol\beta\rVert_2^2}{c^2}
+  +\lambda\lVert\boldsymbol\beta-\boldsymbol\beta_0\rVert_2^2
+  \right\}.
+  \label{eq:ridge}
+\end{equation}
+Here, $c$ is the root mean square of the historical weekly values for the
+location, calculated over weeks 30--23. This scaling gives $\lambda$ a
+comparable interpretation across locations with different count levels. The
+non-negativity constraint prevents hard-to-interpret compensation between
+positive and negative seasonal weights. The coefficients are not constrained
+to sum to one, allowing the model to adjust the overall level upward or
+downward.
+
+For reference date $r$, the four forecasts are
+\begin{equation}
+  \widehat y_{r+h}=\mathbf{x}_{r+h}^{\mathsf T}
+  \widehat{\boldsymbol\beta}_r,\qquad h=0,1,2,3.
+  \label{eq:horizons}
+\end{equation}
+The same coefficient vector is used for all four horizons, but it is
+re-estimated for every forecast round. If the target ISO week is week 53,
+which is absent from most historical seasons, the mean of weeks 52 and 1 is
+used as the historical covariate.
+
+\section*{Regularisation and calibration}
+
+Equation~\eqref{eq:ridge} can be interpreted as a maximum-a-posteriori
+estimate in a Gaussian regression model with a normal prior centred on the
+equal weights in equation~\eqref{eq:prior}, truncated to the non-negative
+orthant. Large values of $\lambda$ keep the model close to the historical
+seasonal mean, whereas small values permit faster adaptation to the current
+season.
+
+One common regularisation value is used for all locations. The candidates
+were
+\[
+  0.01,\ 0.03,\ 0.1,\ 0.3,\ 1,\ 3,\ 10,\ 30,\ 100,\ 300,\ 1000.
+\]
+They were compared using rolling forecast origins in earlier complete
+seasons. For each calibration season, only still earlier seasons were used as
+covariates, and at least three covariate seasons were required. The selection
+criterion was mean absolute error across locations, forecast rounds, and the
+four horizons. The best common value was
+\[
+  \boxed{\lambda=1}.
+\]
+The 2025/26 season was held out completely from this selection and was used
+only for final retrospective evaluation.
+
+\section*{Retrospective check and operational use}
+
+For 2025/26, common regularisation gave an overall MAE of 96.7 cases,
+compared with 98.5 when $\lambda$ was selected separately for each location.
+MAE was 229.8 for Sweden, 27.6 for Skåne, and 32.8 for Västra Götaland. This
+supports the simpler common specification, but it is evidence from a single
+influenza season and should not be interpreted as a general performance
+guarantee.
+
+In operation, the model reads the data version available for the current
+forecast round, removes observations after the Sunday preceding the reference
+date, identifies complete previous seasons, and estimates
+$\widehat{\boldsymbol\beta}_r$ separately for each location. Its output consists
+of twelve non-negative point forecasts: three locations times four horizons.
+The model does not quantify forecast uncertainty; probabilistic forecasts are
+produced by the hub's separate ensemble model.
+
+The main limitation is the assumption that future epidemic trajectories can
+be represented by historical seasons. New viral variants, changes in testing,
+or structural changes in reporting may therefore lead to systematic errors.
+The fitted seasonal weights, their sum, and forecast errors should be
+monitored during the season, but $\lambda$ must not be changed using outcomes
+from a season that is being evaluated concurrently.
+
+\end{document}
